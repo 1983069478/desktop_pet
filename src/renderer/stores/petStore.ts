@@ -9,10 +9,8 @@ export interface PetStageInfo {
   stage: number
   /** 阶段中文名（显示在宠物下方小牌子上） */
   name: string
-  /** 该阶段的 mp4 动画资源路径（优先播放，动画流畅） */
+  /** 该阶段的 mp4 动画资源路径 */
   mp4: string
-  /** 该阶段的 gif 动画资源路径（mp4 无法播放时兜底） */
-  gif: string
 }
 
 /**
@@ -20,9 +18,9 @@ export interface PetStageInfo {
  * 素材都放在 public/pets/ 目录下，通过相对路径直接引用。
  */
 export const PET_STAGES: PetStageInfo[] = [
-  { stage: 0, name: '宠物蛋', mp4: '', gif: '/pets/stage_0.gif' },
-  { stage: 1, name: '幼体', mp4: '', gif: '/pets/stage_1.gif' },
-  { stage: 2, name: '进化体', mp4: '', gif: '/pets/stage_2.gif' },
+  { stage: 0, name: '宠物蛋', mp4: '/pets/stage_0.mp4' },
+  { stage: 1, name: '幼体', mp4: '/pets/stage_2.mp4' },
+  { stage: 2, name: '进化体', mp4: '/pets/stage_3.mp4' },
 ]
 
 /** 本地存储 key：记住用户上次停留在哪个阶段 */

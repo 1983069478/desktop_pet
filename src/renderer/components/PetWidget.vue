@@ -5,29 +5,17 @@
   >
     <div class="pet-container" :class="{ popping: isPopping }">
       <div class="pet-character">
-        <!-- 隐藏的视频/图片渲染源，供 Canvas 抓取帧像素 -->
+        <!-- MP4 视频源：隐藏的 <video> 元素，由 Canvas 逐帧抓取画面并抠白底 -->
         <video
           ref="videoRef"
-          v-if="isVideo"
-          :src="mediaSrc"
+          :src="mp4Src"
           autoplay
           loop
           muted
           playsinline
           class="hidden-media"
-          @loadeddata="onMediaLoaded"
-          @error="onMediaError"
+          @loadeddata="onVideoReady"
         ></video>
-
-        <img
-          ref="imgRef"
-          v-else
-          :src="mediaSrc"
-          alt="Pet"
-          class="hidden-media"
-          @load="onMediaLoaded"
-          @error="onMediaError"
-        />
 
         <!-- 过滤并抠掉白底后的透明 Canvas 渲染画板 -->
         <canvas
@@ -41,34 +29,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { usePetStore } from '../stores/petStore'
 
 const store = usePetStore()
 
-// 是否优先使用 mp4 动画（mp4 播放失败时自动退回 gif）
-const useVideo = ref(true)
-
-// 当前媒体资源地址：优先播放 mp4，失败则用 gif 兜底
-const mediaSrc = computed(() => {
-  return useVideo.value ? store.currentInfo.mp4 : store.currentInfo.gif
-})
-
-// 判断当前媒体资源是视频还是图片
-const isVideo = computed(() => {
-  return mediaSrc.value.endsWith('.mp4') || mediaSrc.value.endsWith('.webm')
-})
+// MP4 视频资源路径
+const mp4Src = computed(() => store.currentInfo.mp4)
 
 // 宠物下方小牌子显示的文字（阶段 + 名字）
 const badgeText = computed(() => `阶段${store.stage} · ${store.currentInfo.name}`)
 
 const videoRef = ref<HTMLVideoElement | null>(null)
-const imgRef = ref<HTMLImageElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 let animFrameId: number | null = null
 
-// 画布最大边长：限制在合理尺寸内，避免大视频逐帧抠底导致卡顿
+// 画布最大边长：限制在合理尺寸内，避免大素材逐帧抠底导致卡顿
 const MAX_RENDER_DIM = 480
 
 // ===================== 点击切换形态的弹跳反馈 =====================
@@ -84,7 +61,7 @@ function triggerPop() {
 }
 
 // ===================== 拖拽移动 vs 点击切换 的智能区分 =====================
-const DRAG_THRESHOLD = 5 // 按下后位移超过 5px 判定为拖动，否则视为点击
+const DRAG_THRESHOLD = 5
 let isPressing = false
 let hasDragged = false
 let startScreenX = 0
@@ -95,7 +72,6 @@ function onMouseDown(e: MouseEvent) {
   hasDragged = false
   startScreenX = e.screenX
   startScreenY = e.screenY
-  // 通知主进程记录拖拽起点（窗口当前位置 + 鼠标位置）
   window.petAPI?.startDrag(e.screenX, e.screenY)
 }
 
@@ -104,28 +80,22 @@ function onMouseMove(e: MouseEvent) {
   const dx = e.screenX - startScreenX
   const dy = e.screenY - startScreenY
   if (Math.hypot(dx, dy) > DRAG_THRESHOLD) hasDragged = true
-  // 只有确实在拖动时才通知主进程移动窗口，避免误触发
   if (hasDragged) window.petAPI?.moveDrag(e.screenX, e.screenY)
 }
 
 function onMouseUp() {
   if (!isPressing) return
   isPressing = false
-  // 没有拖动 = 单击 → 切换到下一阶段并播放弹跳反馈
   if (!hasDragged) {
     store.nextStage()
     triggerPop()
   }
 }
 
-// ===================== Canvas 抠白底渲染 =====================
-
+// ===================== Canvas 抠白底算法 =====================
 /**
  * 抠除白底算法 (Chroma Key Filter with Soft Alpha Edge)
  * 把接近纯白的像素变成透明，边缘做平滑过渡，消除白边锯齿。
- *
- * @param threshold 与纯白 (255,255,255) 距离小于此值的像素直接完全透明
- * @param softEdge  与纯白距离落在 threshold ~ threshold+softEdge 之间的像素做半透明渐变
  */
 const removeWhiteBackground = (
   ctx: CanvasRenderingContext2D,
@@ -143,7 +113,6 @@ const removeWhiteBackground = (
     const g = data[i + 1]
     const b = data[i + 2]
 
-    // 计算当前像素颜色与纯白色 (255, 255, 255) 的三维欧氏色彩距离
     const distance = Math.sqrt(
       (255 - r) * (255 - r) +
       (255 - g) * (255 - g) +
@@ -151,9 +120,8 @@ const removeWhiteBackground = (
     )
 
     if (distance < threshold) {
-      data[i + 3] = 0 // 变为完全透明
+      data[i + 3] = 0
     } else if (distance < threshold + softEdge) {
-      // 软边缘 Alpha 渐变过渡
       const alphaRatio = (distance - threshold) / softEdge
       data[i + 3] = Math.floor(alphaRatio * data[i + 3])
     }
@@ -162,69 +130,52 @@ const removeWhiteBackground = (
   ctx.putImageData(frame, 0, 0)
 }
 
-/**
- * 各媒体类型的抠白底参数：
- * - mp4 视频：背景通常略带浅灰/浅色，用较宽阈值才能去干净
- * - gif：背景是纯白色，用很小阈值即可，避免误删宠物身上偏浅的颜色
- */
-const CHROMA_KEY_VIDEO = { threshold: 45, softEdge: 35 }
-const CHROMA_KEY_GIF = { threshold: 8, softEdge: 8 }
+// 调低阈值：只抠除极度接近纯白的背景，保护人脸、浅色肤色及高光区域不被误判透明
+const CHROMA_KEY_VIDEO = { threshold: 41, softEdge: 15 }
 
-/** 逐帧渲染逻辑：抓取视频/图片当前帧 → 画到画布 → 抠掉白底 */
+// ===================== 逐帧渲染主循环 =====================
 const renderFrame = () => {
   const canvas = canvasRef.value
   if (!canvas) return
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) return
 
-  const source = isVideo.value ? videoRef.value : imgRef.value
-  if (!source) return
-
-  // 获取源媒体原始尺寸
-  let width: number
-  let height: number
-  if (isVideo.value) {
-    const v = source as HTMLVideoElement
-    width = v.videoWidth
-    height = v.videoHeight
-  } else {
-    const im = source as HTMLImageElement
-    width = im.naturalWidth
-    height = im.naturalHeight
-  }
-
-  // 尺寸还没就绪时，等待下一帧再试
-  if (!width || !height) {
+  const video = videoRef.value
+  if (!video) {
     animFrameId = requestAnimationFrame(renderFrame)
     return
   }
 
-  // 等比缩放，限制最大边长，保证逐帧抠底流畅
-  const scale = Math.min(1, MAX_RENDER_DIM / Math.max(width, height))
-  const drawW = Math.round(width * scale)
-  const drawH = Math.round(height * scale)
+  const vw = video.videoWidth
+  const vh = video.videoHeight
+
+  if (!vw || !vh) {
+    animFrameId = requestAnimationFrame(renderFrame)
+    return
+  }
+
+  const scale = Math.min(1, MAX_RENDER_DIM / Math.max(vw, vh))
+  const drawW = Math.round(vw * scale)
+  const drawH = Math.round(vh * scale)
 
   if (canvas.width !== drawW || canvas.height !== drawH) {
     canvas.width = drawW
     canvas.height = drawH
   }
 
-  // 1. 绘制当前视频帧/图像
+  // 从视频抓取当前帧
   ctx.clearRect(0, 0, drawW, drawH)
-  ctx.drawImage(source, 0, 0, drawW, drawH)
+  ctx.drawImage(video, 0, 0, drawW, drawH)
 
-  // 2. 抠掉白色背景像素（gif 只去纯白，mp4 用较宽阈值）
-  const chroma = isVideo.value ? CHROMA_KEY_VIDEO : CHROMA_KEY_GIF
-  removeWhiteBackground(ctx, drawW, drawH, chroma.threshold, chroma.softEdge)
+  // 抠除白底
+  removeWhiteBackground(ctx, drawW, drawH, CHROMA_KEY_VIDEO.threshold, CHROMA_KEY_VIDEO.softEdge)
 
-  // 3. 如果是视频，持续请求下一帧渲染（实现动画）
-  if (isVideo.value) {
-    animFrameId = requestAnimationFrame(renderFrame)
-  }
+  // 持续请求下一帧
+  animFrameId = requestAnimationFrame(renderFrame)
 }
 
-/** 媒体就绪回调：开始播放并渲染 */
-const onMediaLoaded = () => {
+// ===================== 媒体加载与切换 =====================
+function onVideoReady() {
   if (animFrameId) cancelAnimationFrame(animFrameId)
   if (videoRef.value) {
     videoRef.value.play().catch(() => {})
@@ -232,33 +183,40 @@ const onMediaLoaded = () => {
   renderFrame()
 }
 
-/** 媒体加载失败：mp4 播放不了就退回 gif */
-const onMediaError = () => {
-  if (useVideo.value) {
-    useVideo.value = false
-  }
-}
-
-// 阶段切换后：重新尝试用 mp4，清空旧画布等待新素材
 watch(
   () => store.stage,
-  () => {
-    useVideo.value = true
+  async () => {
     if (animFrameId) {
       cancelAnimationFrame(animFrameId)
       animFrameId = null
     }
+
     const canvas = canvasRef.value
-    if (canvas) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+    if (canvas) {
+      const ctx = canvas.getContext('2d')
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+    }
+
+    await nextTick()
+
+    if (videoRef.value) {
+      videoRef.value.play().catch(() => {})
+      if (videoRef.value.readyState >= 2) {
+        onVideoReady()
+      }
+    }
   },
 )
 
 onMounted(() => {
-  // 鼠标移动 / 松开监听在 window 上，保证拖出组件边缘也能持续跟手
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
+
   if (videoRef.value) {
     videoRef.value.play().catch(() => {})
+    if (videoRef.value.readyState >= 2) {
+      onVideoReady()
+    }
   }
 })
 
@@ -294,7 +252,6 @@ onUnmounted(() => {
   transition: transform 0.15s ease;
 }
 
-/* 点击切换形态时的弹跳反馈 */
 .pet-container.popping {
   transform: scale(1.1);
 }
@@ -318,16 +275,16 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-/* 隐藏原始含背景媒体，专供 Canvas 逐帧抓取 */
 .hidden-media {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
+  width: 480px;
+  height: auto;
+  opacity: 1;
   pointer-events: none;
 }
 
-/* 展示扣除白底后的透明 Canvas */
 .pet-media-canvas {
   width: 100%;
   height: 100%;
