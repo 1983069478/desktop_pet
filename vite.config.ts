@@ -12,6 +12,12 @@ export default defineConfig({
       },
       preload: {
         input: path.join(__dirname, 'src/preload/index.ts'),
+        // 关键：preload 必须输出到独立目录，否则会和 main 的输出 index.js 冲突并被覆盖
+        vite: {
+          build: {
+            outDir: 'dist-electron/preload',
+          },
+        },
       },
       renderer: {},
     }),
