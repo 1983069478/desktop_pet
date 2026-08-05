@@ -1,5 +1,13 @@
-import { app, BrowserWindow, screen, ipcMain } from 'electron'
+import { app, BrowserWindow, screen, ipcMain, Menu } from 'electron'
 import path from 'node:path'
+import dotenv from 'dotenv'
+
+import { fileURLToPath } from 'node:url'
+
+dotenv.config()
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 // 关闭硬件加速（可选，某些 Windows 系统上透明窗口需要关闭硬件加速以防黑框，但通常默认支持）
 // app.disableHardwareAcceleration()
@@ -18,21 +26,56 @@ let dragState: {
   startCursorY: number
 } | null = null
 
-/** 注册渲染进程发来的 IPC 事件（窗口拖拽） */
-function registerWindowDragIpc() {
-  // 用户按下鼠标：记录拖拽起点
+/** 注册渲染进程发来的 IPC 事件 */
+function registerIpcHandlers() {
+  // ---- 窗口拖拽 ----
+
   ipcMain.on('window-drag-start', (_event, cursorX: number, cursorY: number) => {
     if (!mainWindow) return
     const [winX, winY] = mainWindow.getPosition()
     dragState = { startWindowX: winX, startWindowY: winY, startCursorX: cursorX, startCursorY: cursorY }
   })
 
-  // 用户移动鼠标：根据位移量移动窗口
   ipcMain.on('window-drag-move', (_event, cursorX: number, cursorY: number) => {
     if (!mainWindow || !dragState) return
     const dx = cursorX - dragState.startCursorX
     const dy = cursorY - dragState.startCursorY
     mainWindow.setPosition(dragState.startWindowX + dx, dragState.startWindowY + dy)
+  })
+
+  // ---- 私钥读取 ----
+
+  ipcMain.handle('get-private-key', () => {
+    return process.env.PRIVATE_KEY || ''
+  })
+
+  // ---- 右键菜单 ----
+
+  ipcMain.on('show-context-menu', (event) => {
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: '📝 快捷打卡',
+        click: () => {
+          event.sender.send('menu-action', 'check-in')
+        },
+      },
+      {
+        label: '🔄 重置数据',
+        click: () => {
+          event.sender.send('menu-action', 'reset')
+        },
+      },
+      { type: 'separator' },
+      {
+        label: '❌ 退出应用',
+        click: () => {
+          app.quit()
+        },
+      },
+    ]
+
+    const menu = Menu.buildFromTemplate(template)
+    menu.popup({ window: mainWindow! })
   })
 }
 
@@ -41,8 +84,8 @@ function createWindow() {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
-  const windowWidth = 200
-  const windowHeight = 270
+  const windowWidth = 220
+  const windowHeight = 340
 
   mainWindow = new BrowserWindow({
     width: windowWidth,
@@ -56,7 +99,7 @@ function createWindow() {
     hasShadow: false,       // 关闭窗口阴影
     skipTaskbar: false,     // 是否在任务栏隐藏 (开发期保留任务栏图标便于操控)
     webPreferences: {
-      preload: path.join(__dirname, 'preload/index.js'),
+      preload: path.join(__dirname, 'preload/index.mjs'),
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -76,7 +119,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  registerWindowDragIpc()
+  registerIpcHandlers()
   createWindow()
 
   app.on('activate', () => {

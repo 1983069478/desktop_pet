@@ -23,33 +23,157 @@ export const PET_STAGES: PetStageInfo[] = [
   { stage: 2, name: '进化体', mp4: '/pets/stage_3.mp4' },
 ]
 
-/** 本地存储 key：记住用户上次停留在哪个阶段 */
-const STORAGE_KEY = 'pet_current_stage'
+// ===================== 打卡四维属性 =====================
 
-/**
- * 宠物状态仓库：
- * - 负责当前阶段 (0/1/2) 的状态管理
- * - 阶段变化后自动持久化到 localStorage，重启应用仍能记住
- */
+/** 四项属性键名 */
+export type AttributeKey = 'focus' | 'wisdom' | 'creativity' | 'empathy'
+
+/** 属性中文显示名称 */
+export const ATTRIBUTE_LABELS: Record<AttributeKey, string> = {
+  focus: '🎯 专注',
+  wisdom: '🧠 智慧',
+  creativity: '🎨 创造',
+  empathy: '💛 共情',
+}
+
+/** 四项属性经验值 */
+export interface PetStats {
+  focus: number
+  wisdom: number
+  creativity: number
+  empathy: number
+}
+
+/** 创建初始零值经验 */
+function createEmptyStats(): PetStats {
+  return { focus: 0, wisdom: 0, creativity: 0, empathy: 0 }
+}
+
+// ===================== 本地存储 key =====================
+
+const STORAGE_KEY_STAGE = 'pet_current_stage'
+const STORAGE_KEY_STATS = 'pet_stats'
+const STORAGE_KEY_TOKEN_ID = 'pet_token_id'
+
+// ===================== Store =====================
+
 export const usePetStore = defineStore('pet', () => {
-  // 从本地存储读取上次阶段，若值非法则回退到阶段 0
-  const savedStage = Number(localStorage.getItem(STORAGE_KEY))
+  // ---- 阶段状态 ----
+  const savedStage = Number(localStorage.getItem(STORAGE_KEY_STAGE))
   const stage = ref<number>(savedStage >= 0 && savedStage < PET_STAGES.length ? savedStage : 0)
 
-  /** 当前阶段对应的完整信息（名字 + 素材路径） */
   const currentInfo = computed<PetStageInfo>(() => PET_STAGES[stage.value])
 
-  /** 设置阶段（自动处理越界，保证始终落在 0 ~ length-1 范围内） */
   function setStage(next: number) {
     const wrapped = ((next % PET_STAGES.length) + PET_STAGES.length) % PET_STAGES.length
     stage.value = wrapped
-    localStorage.setItem(STORAGE_KEY, String(wrapped))
+    localStorage.setItem(STORAGE_KEY_STAGE, String(wrapped))
   }
 
-  /** 点击宠物：切换到下一阶段，最后一个阶段后回到第一个（循环） */
   function nextStage() {
     setStage(stage.value + 1)
   }
 
-  return { stage, currentInfo, setStage, nextStage }
+  // ---- 经验值状态 ----
+
+  /** 从 localStorage 读取经验值，若不存在或格式损坏则用零值初始化 */
+  const stats = ref<PetStats>(loadStats())
+
+  function loadStats(): PetStats {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_STATS)
+      if (!raw) return createEmptyStats()
+      const parsed = JSON.parse(raw)
+      // 校验数据结构完整性
+      const keys: AttributeKey[] = ['focus', 'wisdom', 'creativity', 'empathy']
+      for (const k of keys) {
+        if (typeof parsed[k] !== 'number' || parsed[k] < 0) {
+          return createEmptyStats()
+        }
+      }
+      return parsed as PetStats
+    } catch {
+      return createEmptyStats()
+    }
+  }
+
+  /** 将经验值写入 localStorage */
+  function saveStats() {
+    localStorage.setItem(STORAGE_KEY_STATS, JSON.stringify(stats.value))
+  }
+
+  /**
+   * 快捷打卡：给指定属性 +10 经验，立即持久化到本地存储
+   * @param attr 要增加经验的属性键名
+   */
+  function checkIn(attr: AttributeKey) {
+    stats.value[attr] += 10
+    saveStats()
+  }
+
+  /** 总经验值（四维合计） */
+  const totalExp = computed(() => {
+    return stats.value.focus + stats.value.wisdom + stats.value.creativity + stats.value.empathy
+  })
+
+  // ---- NFT Token ID ----
+
+  const tokenId = ref<number | null>(loadTokenId())
+
+  function loadTokenId(): number | null {
+    const raw = localStorage.getItem(STORAGE_KEY_TOKEN_ID)
+    if (!raw) return null
+    const num = Number(raw)
+    return Number.isInteger(num) && num >= 0 ? num : null
+  }
+
+  function setTokenId(id: number) {
+    tokenId.value = id
+    localStorage.setItem(STORAGE_KEY_TOKEN_ID, String(id))
+  }
+
+  /** 是否需要铸造 NFT（首次使用且没有 Token ID） */
+  const needsMint = computed(() => tokenId.value === null)
+
+  /**
+   * 是否满足进化条件：
+   * - 总经验 ≥ 30
+   * - 当前不是最高阶段（阶段 2 是最终形态）
+   */
+  const canEvolve = computed(() => totalExp.value >= 30 && stage.value < 2)
+
+  /**
+   * 重置所有经验值为 0，并持久化
+   */
+  function resetStats() {
+    stats.value = createEmptyStats()
+    saveStats()
+  }
+
+  /** 重置全部数据（包括阶段、经验、Token ID） */
+  function resetAll() {
+    resetStats()
+    setStage(0)
+    tokenId.value = null
+    localStorage.removeItem(STORAGE_KEY_TOKEN_ID)
+  }
+
+  return {
+    // 阶段
+    stage,
+    currentInfo,
+    setStage,
+    nextStage,
+    // 经验
+    stats,
+    totalExp,
+    checkIn,
+    resetStats,
+    // NFT
+    tokenId,
+    setTokenId,
+    needsMint,
+    canEvolve,
+    resetAll,
+  }
 })
