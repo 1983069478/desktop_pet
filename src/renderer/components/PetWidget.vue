@@ -59,6 +59,12 @@
       :explorer-url="txExplorerUrl"
       @close="txPhase = 'idle'"
     />
+
+    <!-- NFT 状态面板（双击宠物打开） -->
+    <NftPanel
+      :visible="showPanel"
+      @close="showPanel = false"
+    />
   </div>
 </template>
 
@@ -68,6 +74,7 @@ import { usePetStore } from '../stores/petStore'
 import CheckInModal from './CheckInModal.vue'
 import TxStatus from './TxStatus.vue'
 import type { TxPhase } from './TxStatus.vue'
+import NftPanel from './NftPanel.vue'
 import { initWeb3, isReady, mintPet, evolvePet, getExplorerUrl } from '../services/web3Service'
 
 const store = usePetStore()
@@ -89,6 +96,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 // ---- 界面状态 ----
 
 const showModal = ref(false)
+const showPanel = ref(false)
 
 // ---- 交易状态 ----
 
@@ -122,6 +130,10 @@ let hasDragged = false
 let startScreenX = 0
 let startScreenY = 0
 
+// 双击检测：两次点击间隔 ≤ 300ms 视为双击
+let lastClickTime = 0
+const DOUBLE_CLICK_INTERVAL = 300
+
 function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
   isPressing = true
@@ -143,8 +155,16 @@ function onMouseUp() {
   if (!isPressing) return
   isPressing = false
   if (!hasDragged) {
-    // 取消点击直接切换形态，仅保留点击动画反馈
-    triggerPop()
+    const now = Date.now()
+    if (now - lastClickTime < DOUBLE_CLICK_INTERVAL) {
+      // 双击 → 打开 NFT 面板
+      lastClickTime = 0
+      showPanel.value = true
+    } else {
+      // 单击 → 弹跳反馈
+      lastClickTime = now
+      triggerPop()
+    }
   }
 }
 
