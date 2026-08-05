@@ -1,5 +1,6 @@
 import { app, BrowserWindow, screen, ipcMain, Menu } from 'electron'
 import path from 'node:path'
+import fs from 'node:fs'
 import dotenv from 'dotenv'
 
 import { fileURLToPath } from 'node:url'
@@ -8,6 +9,39 @@ dotenv.config()
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// ---- 窗口位置持久化 ----
+
+/** 保存窗口位置的 JSON 文件路径 */
+const WINDOW_CONFIG_PATH = path.join(app.getPath('userData'), 'window-position.json')
+
+interface WindowConfig {
+  x: number
+  y: number
+}
+
+function saveWindowPosition(x: number, y: number) {
+  try {
+    fs.writeFileSync(WINDOW_CONFIG_PATH, JSON.stringify({ x, y }))
+  } catch {
+    // 写入失败静默忽略
+  }
+}
+
+function loadWindowPosition(): WindowConfig | null {
+  try {
+    if (fs.existsSync(WINDOW_CONFIG_PATH)) {
+      const raw = fs.readFileSync(WINDOW_CONFIG_PATH, 'utf-8')
+      const config = JSON.parse(raw)
+      if (typeof config.x === 'number' && typeof config.y === 'number') {
+        return config
+      }
+    }
+  } catch {
+    // 读取失败则使用默认位置
+  }
+  return null
+}
 
 // 关闭硬件加速（可选，某些 Windows 系统上透明窗口需要关闭硬件加速以防黑框，但通常默认支持）
 // app.disableHardwareAcceleration()
@@ -87,11 +121,16 @@ function createWindow() {
   const windowWidth = 220
   const windowHeight = 340
 
+  // 尝试恢复上次窗口位置，否则使用默认右下角
+  const saved = loadWindowPosition()
+  const defaultX = screenWidth - windowWidth - 20
+  const defaultY = screenHeight - windowHeight - 20
+
   mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
-    x: screenWidth - windowWidth - 20, // 距离右侧 20px
-    y: screenHeight - windowHeight - 20, // 距离底部 20px
+    x: saved ? saved.x : defaultX,
+    y: saved ? saved.y : defaultY,
     frame: false,            // 无边框窗口
     transparent: true,      // 窗口背景透明
     alwaysOnTop: true,      // 常驻桌面最顶层
@@ -112,6 +151,14 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  // 关闭前保存窗口位置
+  mainWindow.on('close', () => {
+    if (mainWindow) {
+      const [x, y] = mainWindow.getPosition()
+      saveWindowPosition(x, y)
+    }
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null

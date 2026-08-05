@@ -5,7 +5,17 @@
     @contextmenu.prevent="onContextMenu"
   >
     <!-- 宠物显示区 -->
-    <div v-if="!showModal" class="pet-container" :class="{ popping: isPopping }">
+    <div
+      v-if="!showModal"
+      class="pet-container"
+      :class="{ popping: isPopping, shaking: isShaking, evolving: isEvolving, 'evo-success': isEvoSuccess, dragging: isDragging }"
+    >
+      <!-- 进化粒子特效 -->
+      <div v-if="isEvolving" class="evo-particles">
+        <span v-for="i in 12" :key="i" class="evo-particle" :style="particleStyle(i)"></span>
+      </div>
+      <div v-if="isEvolving" class="evo-glow"></div>
+
       <div class="pet-character">
         <video
           ref="videoRef"
@@ -23,6 +33,11 @@
           class="pet-media-canvas"
         ></canvas>
       </div>
+
+      <!-- 打卡反馈飘字 -->
+      <Transition name="float-up">
+        <div v-if="feedbackText" class="checkin-feedback">{{ feedbackText }}</div>
+      </Transition>
 
       <!-- 宠物小牌子 + 进化按钮 -->
       <div class="pet-badge">{{ badgeText }}</div>
@@ -42,14 +57,14 @@
         :disabled="txPhase === 'sending' || txPhase === 'confirming'"
         @click="triggerEvolution"
       >
-        ✨ 可以进化了！
+        {{ isEvolving ? '⏳ 进化中...' : '✨ 可以进化了！' }}
       </button>
     </div>
 
     <!-- 快捷打卡弹窗 -->
     <CheckInModal
       :visible="showModal"
-      @close="showModal = false"
+      @close="onCheckInClose"
     />
 
     <!-- 链上交易状态提示 -->
@@ -112,7 +127,13 @@ const MAX_RENDER_DIM = 480
 // ---- 弹跳反馈 ----
 
 const isPopping = ref(false)
+const isShaking = ref(false)
+const isEvolving = ref(false)
+const isEvoSuccess = ref(false)
+const feedbackText = ref('')
 let popTimer: number | null = null
+let shakeTimer: number | null = null
+let feedbackTimer: number | null = null
 
 function triggerPop() {
   isPopping.value = true
@@ -122,6 +143,32 @@ function triggerPop() {
   }, 180)
 }
 
+/** 打卡成功：宠物抖动 + 飘字 */
+function triggerShake(attrLabel: string) {
+  isShaking.value = true
+  feedbackText.value = `+10 ${attrLabel}`
+  if (shakeTimer) window.clearTimeout(shakeTimer)
+  shakeTimer = window.setTimeout(() => {
+    isShaking.value = false
+  }, 400)
+
+  // 飘字 1.5 秒后消失
+  if (feedbackTimer) window.clearTimeout(feedbackTimer)
+  feedbackTimer = window.setTimeout(() => {
+    feedbackText.value = ''
+  }, 1500)
+}
+
+/** 进化粒子初始位置和动画延迟 */
+function particleStyle(i: number) {
+  const angle = (i / 12) * 360
+  const delay = Math.random() * 0.3
+  return {
+    '--angle': angle + 'deg',
+    '--delay': delay + 's',
+  }
+}
+
 // ---- 拖拽 vs 点击 ----
 
 const DRAG_THRESHOLD = 5
@@ -129,6 +176,9 @@ let isPressing = false
 let hasDragged = false
 let startScreenX = 0
 let startScreenY = 0
+
+/** 拖拽中暂停浮动动画 */
+const isDragging = ref(false)
 
 // 双击检测：两次点击间隔 ≤ 300ms 视为双击
 let lastClickTime = 0
@@ -147,13 +197,17 @@ function onMouseMove(e: MouseEvent) {
   if (!isPressing) return
   const dx = e.screenX - startScreenX
   const dy = e.screenY - startScreenY
-  if (Math.hypot(dx, dy) > DRAG_THRESHOLD) hasDragged = true
+  if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+    hasDragged = true
+    isDragging.value = true
+  }
   if (hasDragged) window.petAPI?.moveDrag(e.screenX, e.screenY)
 }
 
 function onMouseUp() {
   if (!isPressing) return
   isPressing = false
+  isDragging.value = false
   if (!hasDragged) {
     const now = Date.now()
     if (now - lastClickTime < DOUBLE_CLICK_INTERVAL) {
@@ -165,6 +219,14 @@ function onMouseUp() {
       lastClickTime = now
       triggerPop()
     }
+  }
+}
+
+/** 打卡弹窗关闭时：若有选中属性则显示反馈 */
+function onCheckInClose(attrLabel?: string) {
+  showModal.value = false
+  if (attrLabel) {
+    triggerShake(attrLabel)
   }
 }
 
@@ -185,25 +247,30 @@ function handleMenuAction(action: 'check-in' | 'reset') {
 // ---- Web3 进化流程 ----
 
 /**
- * 触发进化：先判断是否需要铸造，再执行进化交易
+ * 触发进化：
+ * 1. 立即启动光效（粒子 + 脉冲光柱）
+ * 2. 后台静默执行链上交易（铸造 + 进化），不弹交易框
+ * 3. 交易成功后切换为"成功光效"，短暂闪烁后新宠物登场
+ * 4. 如果交易失败，关闭光效并显示错误
  */
 async function triggerEvolution() {
   if (!store.canEvolve) return
-  if (txPhase.value === 'sending' || txPhase.value === 'confirming') return
+  if (isEvolving.value) return
+
+  isEvolving.value = true
+  isEvoSuccess.value = false
 
   // 确保 Web3 已初始化
   if (!isReady()) {
     try {
       const pk = await window.petAPI?.getPrivateKey()
       if (!pk) {
-        txPhase.value = 'error'
-        txMessage.value = '未找到钱包私钥'
+        isEvolving.value = false
         return
       }
       initWeb3(pk)
     } catch {
-      txPhase.value = 'error'
-      txMessage.value = 'Web3 初始化失败'
+      isEvolving.value = false
       return
     }
   }
@@ -211,39 +278,34 @@ async function triggerEvolution() {
   try {
     let currentTokenId = store.tokenId
 
-    // 如果还没有 NFT，先铸造
+    // 如果还没有 NFT，先铸造（静默）
     if (store.needsMint || currentTokenId === null) {
-      txPhase.value = 'sending'
-      txMessage.value = '正在铸造宠物 NFT...'
-
       const result = await mintPet(store.stage)
       store.setTokenId(result.tokenId)
       currentTokenId = result.tokenId
-
-      txPhase.value = 'confirming'
-      txMessage.value = '铸造完成，开始进化...'
     }
 
-    // 执行进化
+    // 执行进化交易（静默，不弹状态框）
     const newStage = store.stage + 1
-    txPhase.value = 'sending'
-    txMessage.value = `正在进化到阶段 ${newStage}...`
-
     const txHash = await evolvePet(currentTokenId!, newStage)
-
-    txPhase.value = 'success'
-    txMessage.value = `进化成功！`
-
-    // 用 Monad 合约地址生成浏览器链接
     txExplorerUrl.value = getExplorerUrl(txHash)
 
-    // 更新本地阶段并重置经验值（重新从 0 开始打卡积攒）
+    // 交易成功 → 切换到成功光效
+    isEvoSuccess.value = true
+
+    // 成功光效持续 1 秒后：切换阶段 + 关闭光效
+    await new Promise(r => setTimeout(r, 1000))
+
     store.setStage(newStage)
     store.resetStats()
+    isEvolving.value = false
+    isEvoSuccess.value = false
     triggerPop()
 
   } catch (err: any) {
     console.error('[PetWidget] 进化失败:', err)
+    isEvolving.value = false
+    isEvoSuccess.value = false
     txPhase.value = 'error'
     txMessage.value = err?.reason ?? err?.message ?? '交易失败，请重试'
   }
@@ -385,6 +447,11 @@ onUnmounted(() => {
 .pet-container:hover { transform: scale(1.03); }
 .pet-container.popping:hover { transform: scale(1.1); }
 
+/* 拖拽中暂停浮动动画，避免跟手移动时的视觉抖动 */
+.pet-container.dragging .pet-character {
+  animation-play-state: paused;
+}
+
 .pet-character {
   position: relative;
   width: 140px;
@@ -478,5 +545,122 @@ onUnmounted(() => {
 @keyframes pulseGlow {
   0%, 100% { box-shadow: 0 0 8px rgba(167, 139, 250, 0.4); }
   50% { box-shadow: 0 0 18px rgba(167, 139, 250, 0.8); }
+}
+
+/* ---- 打卡反馈：宠物抖动 ---- */
+.pet-container.shaking .pet-character {
+  animation: petShake 0.4s ease-out;
+}
+@keyframes petShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px) rotate(-3deg); }
+  40% { transform: translateX(6px) rotate(3deg); }
+  60% { transform: translateX(-4px) rotate(-2deg); }
+  80% { transform: translateX(4px) rotate(2deg); }
+}
+
+/* ---- 打卡反馈：飘字 ---- */
+.checkin-feedback {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fbbf24;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
+  margin-bottom: 2px;
+}
+.float-up-enter-active { transition: all 0.5s ease-out; }
+.float-up-leave-active { transition: all 0.4s ease-in; }
+.float-up-enter-from { opacity: 0; transform: translateY(10px); }
+.float-up-leave-to { opacity: 0; transform: translateY(-18px); }
+
+/* ---- 进化光效 ---- */
+.evo-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80px;
+  height: 80px;
+  margin: -40px 0 0 -40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(251,191,36,0.6) 0%, rgba(251,191,36,0) 70%);
+  animation: glowPulse 0.8s ease-out infinite alternate;
+  pointer-events: none;
+  z-index: 5;
+}
+/* 进化成功：光柱变亮白、范围扩大 */
+.evo-success .evo-glow {
+  background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(167,139,250,0.4) 40%, rgba(167,139,250,0) 70%);
+  animation: glowBurst 0.6s ease-out forwards;
+}
+@keyframes glowPulse {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(2.2); opacity: 0.2; }
+}
+@keyframes glowBurst {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(3.5); opacity: 0; }
+}
+
+/* ---- 进化粒子 ---- */
+.evo-particles {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.evo-particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fbbf24;
+  animation: particleFly 1.5s ease-out forwards;
+  animation-delay: var(--delay, 0s);
+  box-shadow: 0 0 6px 2px rgba(251, 191, 36, 0.7);
+}
+/* 进化成功：粒子变色并向外爆发 */
+.evo-success .evo-particle {
+  background: #fff;
+  box-shadow: 0 0 10px 4px rgba(167, 139, 250, 0.9);
+  animation: particleBurst 0.8s ease-out forwards;
+}
+@keyframes particleFly {
+  0% {
+    transform: rotate(var(--angle, 0deg)) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--angle, 0deg)) translateY(-50px);
+    opacity: 0;
+  }
+}
+@keyframes particleBurst {
+  0% {
+    transform: rotate(var(--angle, 0deg)) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--angle, 0deg)) translateY(-80px);
+    opacity: 0;
+  }
+}
+
+/* 进化期间宠物闪光 */
+.pet-container.evolving .pet-character {
+  animation: evolveShine 0.3s ease-in-out infinite;
+}
+/* 进化成功：宠物短暂高亮后恢复正常 */
+.evo-success .pet-character {
+  animation: evolveReveal 0.6s ease-out forwards;
+}
+@keyframes evolveShine {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.8) drop-shadow(0 0 10px gold); }
+}
+@keyframes evolveReveal {
+  0% { filter: brightness(2.5) drop-shadow(0 0 20px white); }
+  100% { filter: brightness(1); }
 }
 </style>

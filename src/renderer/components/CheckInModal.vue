@@ -46,7 +46,7 @@ import { ref } from 'vue'
 import { usePetStore, ATTRIBUTE_LABELS, type AttributeKey } from '../stores/petStore'
 
 defineProps<{ visible: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [attrLabel?: string] }>()
 
 const store = usePetStore()
 const taskName = ref('')
@@ -58,10 +58,11 @@ const attributes = (Object.entries(ATTRIBUTE_LABELS) as [AttributeKey, string][]
 
 function onSubmit() {
   if (!selectedAttr.value) return
+  const label = ATTRIBUTE_LABELS[selectedAttr.value]
   store.checkIn(selectedAttr.value)
   taskName.value = ''
   selectedAttr.value = null
-  emit('close')
+  emit('close', label)
 }
 </script>
 
