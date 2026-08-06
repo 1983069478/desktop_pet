@@ -27,5 +27,26 @@
     "vite-plugin-electron": "^0.29.0",
     "vite-plugin-electron-renderer": "^0.14.6",
     "vue-tsc": "^2.2.0"
+  },
+  "build": {
+    "appId": "com.mxxtech.desktoppet",
+    "productName": "DesktopPet",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "win": {
+      "icon": "public/icon.png",
+      "target": [
+        "dir"
+      ]
+    }
   }
 }

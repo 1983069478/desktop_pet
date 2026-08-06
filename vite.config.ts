@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue'
 import electron from 'vite-plugin-electron/simple'
 
 export default defineConfig({
+  base: './',
   plugins: [
     vue(),
     electron({

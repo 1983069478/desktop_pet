@@ -18,9 +18,9 @@ export interface PetStageInfo {
  * 素材都放在 public/pets/ 目录下，通过相对路径直接引用。
  */
 export const PET_STAGES: PetStageInfo[] = [
-  { stage: 0, name: '宠物蛋', mp4: '/pets/stage_0.mp4' },
-  { stage: 1, name: '幼体', mp4: '/pets/stage_2.mp4' },
-  { stage: 2, name: '进化体', mp4: '/pets/stage_3.mp4' },
+  { stage: 0, name: '宠物蛋', mp4: 'pets/stage_0.mp4' },
+  { stage: 1, name: '幼体', mp4: 'pets/stage_2.mp4' },
+  { stage: 2, name: '进化体', mp4: 'pets/stage_3.mp4' },
 ]
 
 // ===================== 打卡四维属性 =====================
@@ -136,11 +136,28 @@ export const usePetStore = defineStore('pet', () => {
   const needsMint = computed(() => tokenId.value === null)
 
   /**
-   * 是否满足进化条件：
-   * - 总经验 ≥ 30
-   * - 当前不是最高阶段（阶段 2 是最终形态）
+   * 当前阶段所需的最高进化经验值：
+   * - 阶段 0 (宠物蛋 -> 幼体)：需要 30 经验
+   * - 阶段 1 (幼体 -> 进化体)：需要 60 经验
+   * - 阶段 2 (进化体/最终形态)：无上限
    */
-  const canEvolve = computed(() => totalExp.value >= 30 && stage.value < 2)
+  const maxExp = computed(() => {
+    if (stage.value === 0) return 30
+    if (stage.value === 1) return 60
+    return 60
+  })
+
+  /**
+   * 是否满足进化条件：
+   * - 阶段 0：总经验 ≥ 30
+   * - 阶段 1：总经验 ≥ 60
+   * - 阶段 2：最终形态，不再进化
+   */
+  const canEvolve = computed(() => {
+    if (stage.value === 0) return totalExp.value >= 30
+    if (stage.value === 1) return totalExp.value >= 60
+    return false
+  })
 
   /**
    * 重置所有经验值为 0，并持久化
@@ -167,6 +184,7 @@ export const usePetStore = defineStore('pet', () => {
     // 经验
     stats,
     totalExp,
+    maxExp,
     checkIn,
     resetStats,
     // NFT

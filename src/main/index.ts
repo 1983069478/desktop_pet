@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, screen, ipcMain, Menu, Tray, nativeImage } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import dotenv from 'dotenv'
@@ -43,10 +43,85 @@ function loadWindowPosition(): WindowConfig | null {
   return null
 }
 
-// 关闭硬件加速（可选，某些 Windows 系统上透明窗口需要关闭硬件加速以防黑框，但通常默认支持）
-// app.disableHardwareAcceleration()
-
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+
+/** 创建系统右下角托盘图标 */
+function createTray() {
+  const iconPaths = [
+    path.join(__dirname, '../public/icon.png'),
+    path.join(__dirname, '../dist/icon.png'),
+    path.join(app.getAppPath(), 'public/icon.png'),
+    path.join(app.getAppPath(), 'dist/icon.png'),
+  ]
+
+  let icon: Electron.NativeImage | null = null
+  for (const p of iconPaths) {
+    if (fs.existsSync(p)) {
+      const img = nativeImage.createFromPath(p)
+      if (!img.isEmpty()) {
+        icon = img
+        break
+      }
+    }
+  }
+
+  if (!icon) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="#7c3aed"/><ellipse cx="16" cy="15" rx="7" ry="9" fill="#a78bfa"/><circle cx="12" cy="11" r="3.5" fill="#ffffff" opacity="0.85"/></svg>`
+    icon = nativeImage.createFromDataURL(`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`)
+  }
+
+  tray = new Tray(icon)
+  tray.setToolTip('🥚')
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '📝 快捷打卡',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.webContents.send('menu-action', 'check-in')
+        }
+      },
+    },
+    {
+      label: '🔄 重置数据',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('menu-action', 'reset')
+        }
+      },
+    },
+    {
+      label: '👁️ 显示/隐藏宠物',
+      click: () => {
+        if (!mainWindow) return
+        if (mainWindow.isVisible()) {
+          mainWindow.hide()
+        } else {
+          mainWindow.show()
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '❌ 退出应用',
+      click: () => {
+        app.quit()
+      },
+    },
+  ])
+
+  tray.setContextMenu(contextMenu)
+  tray.on('click', () => {
+    if (!mainWindow) return
+    if (mainWindow.isVisible()) {
+      mainWindow.focus()
+    } else {
+      mainWindow.show()
+    }
+  })
+}
 
 /**
  * 窗口拖拽状态缓存。
@@ -123,22 +198,27 @@ function createWindow() {
 
   // 尝试恢复上次窗口位置，否则使用默认右下角
   const saved = loadWindowPosition()
-  const defaultX = screenWidth - windowWidth - 20
-  const defaultY = screenHeight - windowHeight - 20
+  const initialX = saved ? saved.x : screenWidth - windowWidth - 20
+  const initialY = saved ? saved.y : screenHeight - windowHeight - 20
+
+  // 确定 preload 脚本路径（兼容 index.mjs 和 index.js）
+  const preloadPath = fs.existsSync(path.join(__dirname, 'preload/index.mjs'))
+    ? path.join(__dirname, 'preload/index.mjs')
+    : path.join(__dirname, 'preload/index.js')
 
   mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
-    x: saved ? saved.x : defaultX,
-    y: saved ? saved.y : defaultY,
+    x: initialX,
+    y: initialY,
     frame: false,            // 无边框窗口
     transparent: true,      // 窗口背景透明
     alwaysOnTop: true,      // 常驻桌面最顶层
     resizable: false,       // 固定窗口大小
     hasShadow: false,       // 关闭窗口阴影
-    skipTaskbar: false,     // 是否在任务栏隐藏 (开发期保留任务栏图标便于操控)
+    skipTaskbar: true,      // 不在 Windows 任务栏显示图标
     webPreferences: {
-      preload: path.join(__dirname, 'preload/index.mjs'),
+      preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -149,7 +229,7 @@ function createWindow() {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
     // mainWindow.webContents.openDevTools({ mode: 'detach' }) // 调试时可开启
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
   // 关闭前保存窗口位置
@@ -168,6 +248,7 @@ function createWindow() {
 app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
+  createTray()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

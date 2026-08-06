@@ -47,7 +47,7 @@
         <div class="exp-bar">
           <div class="exp-fill" :style="{ width: expPercent + '%' }"></div>
         </div>
-        <span class="exp-label">{{ store.totalExp }} / 30</span>
+        <span class="exp-label">{{ expLabelText }}</span>
       </div>
 
       <!-- 进化按钮：满足条件时显示 -->
@@ -101,7 +101,15 @@ const badgeText = computed(() => `阶段${store.stage} · ${store.currentInfo.na
 
 // ---- 经验进度 ----
 
-const expPercent = computed(() => Math.min(100, (store.totalExp / 30) * 100))
+const expPercent = computed(() => {
+  if (store.stage >= 2) return 100
+  return Math.min(100, (store.totalExp / store.maxExp) * 100)
+})
+
+const expLabelText = computed(() => {
+  if (store.stage >= 2) return `EXP: ${store.totalExp}`
+  return `${store.totalExp} / ${store.maxExp}`
+})
 
 // ---- DOM 引用 ----
 

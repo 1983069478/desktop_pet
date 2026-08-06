@@ -73,8 +73,7 @@ function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(6px);
+  background: transparent;
   z-index: 100;
 }
 
