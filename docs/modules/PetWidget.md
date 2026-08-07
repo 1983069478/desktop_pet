@@ -16,14 +16,19 @@
 
 ### 2. 状态管理与拖拽机制
 * **动态经验与曲线进化**：由 `petStore` 响应阶段目标（阶段0需要30经验，阶段1需要60经验，阶段2经验无上限）。配合光效完成链上突破。
-* **桌面原生透明体验**：
-  - 弹窗遮罩背景设为 `transparent` 纯透明，消除无边框窗口下的矩形黑底框。
-  - 主进程开启系统托盘 Tray Icon 挂载，设置 `skipTaskbar: true` 隐藏任务栏图标。
-  - 支持在 `public/icon.png` 放置自定义应用图标并自动替换 `.exe` 内嵌入图标。
+* **桌面原生透明体验与防溢出**：
+  - 外层容器设置 `pointer-events: none`（透明区域 100% 鼠标穿透，不拦截桌面点击），仅在宠物与弹窗实体上启用 `pointer-events: auto`。
+  - 隐藏视频节点设置为零布局占位的绝对定位（`1px * 1px`），并在 `index.html` 开启 `overflow: hidden`，防止各种分辨率屏幕下 Viewport 盒模型扩展拉撑。
+  - 主进程开启系统托盘 Tray Icon 挂载与高 DPI 适配开关，设置 `skipTaskbar: true` 隐藏任务栏图标。
 
 ---
 
 ## 变更历史
+
+### v1.6.0 · 2026-08-07 · [Bugfix]
+* 修复隐藏媒体元素导致的低分辨率/高 DPI 屏幕下窗口盒模型隐形溢出问题（`.hidden-media` 调整为 `1px`，根节点增加 `overflow: hidden`）。
+* 引入 Hit-Testing 碰撞透传机制：`pet-wrapper` 设置 `pointer-events: none`，解决大面积透明窗口在桌面上拦截鼠标操作的问题。
+* 优化组件物理尺寸：宠物形象物理尺寸精简为 `115px * 160px`，窗口调整至 `175px * 265px`。
 
 ### v1.5.0 · 2026-08-06 · [Feature]
 * 新增 Windows 系统右下角托盘图标支持（System Tray Icon）并实现 `skipTaskbar: true` 隐藏任务栏卡片。

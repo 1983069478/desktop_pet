@@ -155,7 +155,17 @@ function registerIpcHandlers() {
   // ---- 私钥读取 ----
 
   ipcMain.handle('get-private-key', () => {
-    return process.env.PRIVATE_KEY || ''
+    if (process.env.PRIVATE_KEY) return process.env.PRIVATE_KEY
+    try {
+      const exeDir = path.dirname(app.getPath('exe'))
+      const envPath = path.join(exeDir, '.env')
+      if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf-8')
+        const match = envContent.match(/PRIVATE_KEY\s*=\s*(.*)/)
+        if (match && match[1]) return match[1].trim()
+      }
+    } catch {}
+    return ''
   })
 
   // ---- 右键菜单 ----
@@ -188,13 +198,16 @@ function registerIpcHandlers() {
   })
 }
 
+// 优化 Windows 高 DPI / 不同缩放屏幕下的窗口像素渲染
+app.commandLine.appendSwitch('high-dpi-support', '1')
+
 function createWindow() {
   // 获取主显示器工作区尺寸
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
 
-  const windowWidth = 220
-  const windowHeight = 340
+  const windowWidth = 175
+  const windowHeight = 265
 
   // 尝试恢复上次窗口位置，否则使用默认右下角
   const saved = loadWindowPosition()

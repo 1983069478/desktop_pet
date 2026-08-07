@@ -268,55 +268,38 @@ async function triggerEvolution() {
   isEvolving.value = true
   isEvoSuccess.value = false
 
-  // 确保 Web3 已初始化
-  if (!isReady()) {
-    try {
-      const pk = await window.petAPI?.getPrivateKey()
-      if (!pk) {
-        isEvolving.value = false
-        return
-      }
-      initWeb3(pk)
-    } catch {
-      isEvolving.value = false
-      return
-    }
-  }
+  const newStage = store.stage + 1
 
+  // 1. 尝试 Web3 链上交互（如有私钥与网络支持）
   try {
-    let currentTokenId = store.tokenId
-
-    // 如果还没有 NFT，先铸造（静默）
-    if (store.needsMint || currentTokenId === null) {
-      const result = await mintPet(store.stage)
-      store.setTokenId(result.tokenId)
-      currentTokenId = result.tokenId
+    let pk = await window.petAPI?.getPrivateKey()
+    if (pk) {
+      if (!isReady()) {
+        initWeb3(pk)
+      }
+      let currentTokenId = store.tokenId
+      if (store.needsMint || currentTokenId === null) {
+        const result = await mintPet(store.stage)
+        store.setTokenId(result.tokenId)
+        currentTokenId = result.tokenId
+      }
+      const txHash = await evolvePet(currentTokenId!, newStage)
+      txExplorerUrl.value = getExplorerUrl(txHash)
     }
-
-    // 执行进化交易（静默，不弹状态框）
-    const newStage = store.stage + 1
-    const txHash = await evolvePet(currentTokenId!, newStage)
-    txExplorerUrl.value = getExplorerUrl(txHash)
-
-    // 交易成功 → 切换到成功光效
-    isEvoSuccess.value = true
-
-    // 成功光效持续 1 秒后：切换阶段 + 关闭光效
-    await new Promise(r => setTimeout(r, 1000))
-
-    store.setStage(newStage)
-    store.resetStats()
-    isEvolving.value = false
-    isEvoSuccess.value = false
-    triggerPop()
-
   } catch (err: any) {
-    console.error('[PetWidget] 进化失败:', err)
-    isEvolving.value = false
-    isEvoSuccess.value = false
-    txPhase.value = 'error'
-    txMessage.value = err?.reason ?? err?.message ?? '交易失败，请重试'
+    console.warn('[PetWidget] 链上进化跳过/失败，转为本地进化:', err)
   }
+
+  // 2. 播放进化成功光效（特效 1 秒）
+  isEvoSuccess.value = true
+  await new Promise(r => setTimeout(r, 1000))
+
+  // 3. 升级阶段 + 经验归 0 + 关闭光效
+  store.setStage(newStage)
+  store.resetStats()
+  isEvolving.value = false
+  isEvoSuccess.value = false
+  triggerPop()
 }
 
 // ---- 抠白底 ----
@@ -437,11 +420,10 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  cursor: grab;
+  pointer-events: none; /* 关键：外层全屏透明区域不捕捉/不拦截鼠标 */
   touch-action: none;
   user-select: none;
 }
-.pet-wrapper:active { cursor: grabbing; }
 
 .pet-container {
   display: flex;
@@ -450,7 +432,10 @@ onUnmounted(() => {
   justify-content: center;
   padding: 6px 0;
   transition: transform 0.15s ease;
+  pointer-events: auto; /* 关键：仅在宠物本体和组件区域响应鼠标拖拽与点击 */
+  cursor: grab;
 }
+.pet-container:active { cursor: grabbing; }
 .pet-container.popping { transform: scale(1.1); }
 .pet-container:hover { transform: scale(1.03); }
 .pet-container.popping:hover { transform: scale(1.1); }
@@ -462,23 +447,22 @@ onUnmounted(() => {
 
 .pet-character {
   position: relative;
-  width: 140px;
-  height: 190px;
+  width: 115px;
+  height: 160px;
   display: flex;
   justify-content: center;
   align-items: center;
   animation: floatBounce 3.5s ease-in-out infinite;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .hidden-media {
-  position: fixed;
-  top: -9999px;
-  left: -9999px;
-  width: 480px;
-  height: auto;
-  opacity: 1;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
   pointer-events: none;
+  overflow: hidden;
 }
 
 .pet-media-canvas {
