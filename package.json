@@ -45,8 +45,16 @@
     "win": {
       "icon": "public/icon.png",
       "target": [
+        "nsis",
         "dir"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "🥚"
     }
   }
 }
