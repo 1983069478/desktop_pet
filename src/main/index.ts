@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, ipcMain, Menu, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, screen, ipcMain, Menu, Tray, nativeImage, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import dotenv from 'dotenv'
@@ -85,6 +85,15 @@ function createTray() {
       },
     },
     {
+      label: '💡 操作指南',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.webContents.send('menu-action', 'guide')
+        }
+      },
+    },
+    {
       label: '🔄 重置数据',
       click: () => {
         if (mainWindow) {
@@ -152,19 +161,31 @@ function registerIpcHandlers() {
     mainWindow.setPosition(dragState.startWindowX + dx, dragState.startWindowY + dy)
   })
 
+  // ---- 打开外部浏览器 URL ----
+  ipcMain.on('open-external', (_event, url: string) => {
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      shell.openExternal(url)
+    }
+  })
+
   // ---- 私钥读取 ----
 
   ipcMain.handle('get-private-key', () => {
     if (process.env.PRIVATE_KEY) return process.env.PRIVATE_KEY
-    try {
-      const exeDir = path.dirname(app.getPath('exe'))
-      const envPath = path.join(exeDir, '.env')
-      if (fs.existsSync(envPath)) {
-        const envContent = fs.readFileSync(envPath, 'utf-8')
-        const match = envContent.match(/PRIVATE_KEY\s*=\s*(.*)/)
-        if (match && match[1]) return match[1].trim()
-      }
-    } catch {}
+    const possiblePaths = [
+      path.join(app.getAppPath(), '.env'),
+      path.join(path.dirname(app.getPath('exe')), '.env'),
+      path.join(process.cwd(), '.env'),
+    ]
+    for (const envPath of possiblePaths) {
+      try {
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf-8')
+          const match = envContent.match(/PRIVATE_KEY\s*=\s*(.*)/)
+          if (match && match[1] && match[1].trim()) return match[1].trim()
+        }
+      } catch {}
+    }
     return ''
   })
 
@@ -176,6 +197,12 @@ function registerIpcHandlers() {
         label: '📝 快捷打卡',
         click: () => {
           event.sender.send('menu-action', 'check-in')
+        },
+      },
+      {
+        label: '💡 操作指南',
+        click: () => {
+          event.sender.send('menu-action', 'guide')
         },
       },
       {
@@ -245,6 +272,14 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
+  // 拦截 target="_blank" 链接，使用系统默认浏览器打开
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:')) {
+      shell.openExternal(url)
+    }
+    return { action: 'deny' }
+  })
+
   // 关闭前保存窗口位置
   mainWindow.on('close', () => {
     if (mainWindow) {
@@ -258,17 +293,32 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(() => {
-  registerIpcHandlers()
-  createWindow()
-  createTray()
+// 限制应用单例运行：若已有实例在运行则直接退出新实例，避免重复创建多个宠物
+const gotTheLock = app.requestSingleInstanceLock()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (!mainWindow.isVisible()) mainWindow.show()
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
     }
   })
-})
+
+  app.whenReady().then(() => {
+    registerIpcHandlers()
+    createWindow()
+    createTray()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

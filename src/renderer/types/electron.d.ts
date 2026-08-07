@@ -4,7 +4,7 @@
  */
 
 /** 右键菜单动作类型 */
-type MenuAction = 'check-in' | 'reset'
+type MenuAction = 'check-in' | 'reset' | 'guide'
 
 /** 宠物窗口专属 API */
 interface PetAPI {
@@ -18,6 +18,8 @@ interface PetAPI {
   onMenuAction: (callback: (action: MenuAction) => void) => void
   /** 移除菜单事件监听，组件销毁时调用 */
   removeMenuActionListener: () => void
+  /** 打开外部默认浏览器链接 */
+  openExternal: (url: string) => void
   /** 从主进程获取测试钱包私钥（返回 Promise） */
   getPrivateKey: () => Promise<string>
 }

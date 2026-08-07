@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('petAPI', {
     ipcRenderer.removeAllListeners('menu-action')
   },
 
+  // ---- 打开外部链接 ----
+  openExternal: (url: string) => ipcRenderer.send('open-external', url),
+
   // ---- 私钥获取 ----
   /** 从主进程获取 .env 中的测试钱包私钥（用于 Web3 交易签名） */
   getPrivateKey: (): Promise<string> => ipcRenderer.invoke('get-private-key'),

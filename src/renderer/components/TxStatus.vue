@@ -10,7 +10,7 @@
           :href="explorerUrl"
           class="tx-link"
           target="_blank"
-          @click.stop
+          @click.stop.prevent="openUrl(explorerUrl)"
         >
           🔗 在 Monad 浏览器中查看 →
         </a>
@@ -22,6 +22,14 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+
+function openUrl(url: string) {
+  if (window.petAPI?.openExternal) {
+    window.petAPI.openExternal(url)
+  } else {
+    window.open(url, '_blank')
+  }
+}
 
 export type TxPhase = 'idle' | 'sending' | 'confirming' | 'success' | 'error'
 
@@ -90,6 +98,7 @@ const statusTitle = computed(() => {
   z-index: 200;
   max-width: 190px;
   font-size: 11px;
+  pointer-events: auto;
 }
 
 .tx-toast.sending {

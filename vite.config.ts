@@ -2,9 +2,15 @@ import { defineConfig } from 'vite'
 import path from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import electron from 'vite-plugin-electron/simple'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 export default defineConfig({
   base: './',
+  define: {
+    'process.env.PRIVATE_KEY': JSON.stringify(process.env.PRIVATE_KEY || ''),
+  },
   plugins: [
     vue(),
     electron({

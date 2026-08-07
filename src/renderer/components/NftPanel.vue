@@ -17,7 +17,7 @@
           </div>
           <div class="info-row">
             <span class="label">合约地址</span>
-            <a class="value link" :href="contractUrl" target="_blank" @click.stop>
+            <a class="value link" :href="contractUrl" target="_blank" @click.stop.prevent="openUrl(contractUrl)">
               {{ shortAddress }} ↗
             </a>
           </div>
@@ -54,7 +54,7 @@
             class="footer-link"
             :href="nftUrl"
             target="_blank"
-            @click.stop
+            @click.stop.prevent="openUrl(nftUrl)"
           >
             🔍 在 Monad 浏览器查看 NFT →
           </a>
@@ -73,6 +73,14 @@ defineProps<{ visible: boolean }>()
 defineEmits<{ close: [] }>()
 
 const store = usePetStore()
+
+function openUrl(url: string) {
+  if (window.petAPI?.openExternal) {
+    window.petAPI.openExternal(url)
+  } else {
+    window.open(url, '_blank')
+  }
+}
 
 // ---- 属性列表 ----
 
@@ -113,40 +121,48 @@ const nftUrl = computed(() => {
   justify-content: center;
   background: transparent;
   z-index: 100;
+  pointer-events: auto;
 }
 
 .panel-card {
-  width: 210px;
-  max-height: 95vh;
+  width: 168px;
+  max-height: 255px;
   overflow-y: auto;
+  scrollbar-width: none; /* 隐藏 Firefox 滚动条 */
+  -ms-overflow-style: none; /* 隐藏 IE/Edge 滚动条 */
   background: linear-gradient(160deg, #1e1b4b, #312e81);
   border: 1px solid rgba(167, 139, 250, 0.4);
-  border-radius: 16px;
-  padding: 14px;
+  border-radius: 14px;
+  padding: 10px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+
+.panel-card::-webkit-scrollbar {
+  display: none; /* 隐藏 Chrome/Safari/Electron 原生滚动条 */
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .panel-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: #e0e7ff;
 }
 
 .close-btn {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
   color: #a5b4fc;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -158,7 +174,7 @@ const nftUrl = computed(() => {
 /* ---- 分区 ---- */
 
 .section {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .section-title {

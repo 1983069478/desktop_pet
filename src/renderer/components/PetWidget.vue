@@ -80,6 +80,12 @@
       :visible="showPanel"
       @close="showPanel = false"
     />
+
+    <!-- 新手教程引导 -->
+    <GuideTooltip
+      :visible="showGuide"
+      @close="showGuide = false"
+    />
   </div>
 </template>
 
@@ -90,6 +96,7 @@ import CheckInModal from './CheckInModal.vue'
 import TxStatus from './TxStatus.vue'
 import type { TxPhase } from './TxStatus.vue'
 import NftPanel from './NftPanel.vue'
+import GuideTooltip from './GuideTooltip.vue'
 import { initWeb3, isReady, mintPet, evolvePet, getExplorerUrl } from '../services/web3Service'
 
 const store = usePetStore()
@@ -120,6 +127,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 const showModal = ref(false)
 const showPanel = ref(false)
+const showGuide = ref(false)
 
 // ---- 交易状态 ----
 
@@ -244,11 +252,13 @@ function onContextMenu() {
   window.petAPI?.showContextMenu()
 }
 
-function handleMenuAction(action: 'check-in' | 'reset') {
+function handleMenuAction(action: 'check-in' | 'reset' | 'guide') {
   if (action === 'check-in') {
     showModal.value = true
   } else if (action === 'reset') {
     store.resetAll()
+  } else if (action === 'guide') {
+    showGuide.value = true
   }
 }
 
@@ -389,6 +399,11 @@ onMounted(async () => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
   window.petAPI?.onMenuAction(handleMenuAction)
+
+  // 首次运行自动弹起新手引导
+  if (!localStorage.getItem('hasSeenGuide')) {
+    showGuide.value = true
+  }
 
   // 初始化 Web3（获取私钥并连接 Monad 测试网）
   try {

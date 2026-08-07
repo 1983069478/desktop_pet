@@ -40,6 +40,9 @@
       "public/**/*",
       "package.json"
     ],
+    "extraFiles": [
+      ".env"
+    ],
     "asar": true,
     "compression": "maximum",
     "win": {

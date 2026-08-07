@@ -75,18 +75,28 @@ function onSubmit() {
   justify-content: center;
   background: transparent;
   z-index: 100;
+  pointer-events: auto;
 }
 
 .modal-card {
-  width: 180px;
+  width: 168px;
+  max-height: 255px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   background: linear-gradient(145deg, #1e1b4b, #312e81);
   border: 1px solid rgba(167, 139, 250, 0.45);
   border-radius: 14px;
-  padding: 14px;
+  padding: 12px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.modal-card::-webkit-scrollbar {
+  display: none;
 }
 
 .modal-header {
